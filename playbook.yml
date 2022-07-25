@@ -1,0 +1,14 @@
+---
+- hosts: <your host>
+  become: true
+  pre_tasks:
+    - name: gather ec2 facts
+      action: ec2_metadata_facts
+      tags:
+        - always
+  
+  roles:
+    - docker
+    
+
+

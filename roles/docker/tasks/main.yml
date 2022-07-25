@@ -1,0 +1,99 @@
+---
+# This playbook installs docker
+
+- name: enable overlay module
+  lineinfile:
+    dest: /etc/modules-load.d/overlay.conf
+    state: present
+    create: yes
+    line: 'overlay'
+
+- name: load overlay module
+  modprobe:
+    name: overlay
+    state: present
+
+- name: enable docker yum repo
+  template:
+    src: docker.repo.j2
+    dest: /etc/yum.repos.d/docker.repo
+    mode: 0644
+
+
+- name: create docker systemd directory
+  file:
+    path: /etc/systemd/system/docker.service.d/
+    state: directory
+    mode: 0755
+
+- name: configure docker to use overlay driver
+  template:
+    src: override.conf.j2
+    dest: /etc/systemd/system/docker.service.d/override.conf
+    mode: 0644
+    force: yes
+  notify:
+    - restart docker
+
+- name: install docker dependency packages
+  yum:
+    name: '{{ item }}'
+    state: present
+    update_cache: True
+  with_items:
+    - lvm2
+    - device-mapper
+    - device-mapper-persistent-data
+    - device-mapper-event
+    - device-mapper-libs
+    - device-mapper-event-libs
+
+
+- name: upgrade all packages
+  yum: name=* state=latest
+
+- name: install selinux
+  yum:
+    name: container-selinux-2:2.119.2-1.911c772.el7_8.noarch
+    state: present
+
+  
+
+- name: install docker packages
+  command: yum install -y https://download.docker.com/linux/centos/7/x86_64/stable/Packages/docker-ce-18.03.0.ce-1.el7.centos.x86_64.rpm
+
+
+- name: enable and start docker
+  service:
+    name: docker
+    enabled: yes
+    state: started
+
+- name: allow the default user to use docker
+  user:
+    name: "{{main_user}}"
+    groups: docker
+    append: yes
+
+- name: Transfer docker config script
+  copy:
+    src: configure-docker-deamon.sh
+    dest: /opt
+    mode: 0644
+  # when: "private_deployment == 'true'"
+
+- name: Execute docker config script
+  command: bash /opt/configure-docker-deamon.sh
+  # when: "private_deployment == 'true'"
+
+- import_tasks: bootstrap.yml
+  when: "'bootstrap' in group_names and private_deployment == 'true'"
+  tags: docker_bootstrap
+
+- import_tasks: slave.yml
+  when: "'slave' in group_names and private_deployment == 'true'"
+  tags: docker_slave
+
+- import_tasks: public_slave.yml
+  when: "'public-slave' in group_names and private_deployment == 'true'"
+  tags: docker_public_slave
